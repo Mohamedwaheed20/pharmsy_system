@@ -1,0 +1,104 @@
+import jwt from "jsonwebtoken";
+import { BlackListToken } from "../db/model/BlackListToken-model.js";
+import User from "../db/model/user-model.js";
+
+const validateToken = async (accesstoken) => {
+    try {
+        
+        const decoded = jwt.verify(accesstoken, process.env.jwt_secretkey);
+            
+        const isblacklisted = await BlackListToken.findOne({ tokenid: decoded.jti });
+        if (isblacklisted) {
+            return res.status(401).json({ message: 'this token is expired and blacklisted' });
+        }
+        const user = await User.findById(decoded._id, "-password");
+        if (!user) {
+            return res.status(401).json({ message: 'please signup' });
+        }
+        return { ...user._doc, tokenid: decoded.jti, expirydate: decoded.exp }
+    }
+    catch (error) {
+        console.log(error);
+        
+    }
+}
+
+export const authantication_middelware = () => {
+    return async (req, res, next) => {
+      try {
+        const { accesstoken } = req.headers;
+        if (!accesstoken) {
+          return res.status(401).json({ message: 'Unauthorized', error: "token is required" });
+        }
+  
+        // ✅ استخدم نفس secret اللي بـ sign
+        const decoded = jwt.verify(accesstoken, process.env.jwt_accesstoken);
+  
+        const isblacklisted = await BlackListToken.findOne({ tokenid: decoded.jti });
+        if (isblacklisted) {
+          return res.status(401).json({ message: 'this token is expired and blacklisted' });
+        }
+  
+        // ✅ استخدم decoded._id
+        const user = await User.findById(decoded._id, "-password");
+        if (!user) {
+          return res.status(401).json({ message: 'please signup' });
+        }
+  
+        req.authuser = user;
+        req.authuser.token = { tokenid: decoded.jti, expirydate: decoded.exp };
+  
+        next();
+      } catch (error) {
+        console.log(error);
+        res.status(500).json({ message: 'Something went wrong', error });
+      }
+    }
+  }
+  
+
+
+
+export const authrization_middelware = (allowedroles) => {
+    return (req, res, next) => {
+        try {
+            const { role } = req.authuser;
+            if (!allowedroles.includes(role)) {
+                return res.status(403).json({ message: 'Forbidden' });
+            }
+            next();
+
+        } catch (error) {
+            console.log(error);
+            res.status(500).json({ message: 'Something went wrong', error });
+
+        }
+
+    }
+}   
+
+
+export const graphauthantication_middelware = async (accesstoken) => {
+
+        try {
+           
+
+
+            const decoded = jwt.verify(accesstoken, process.env.jwtsecretkey);
+            
+            
+            const isblacklisted = await BlackListToken.findOne({ tokenid: decoded.jti });
+            if (isblacklisted) {
+                return new Error("this token is expired and blacklisted")
+            }
+            const user = await User.findById(decoded.publicclaims, "-password");
+            if (!user) {
+                return new Error("please signup")
+            }
+            return { ...user._doc, tokenid: decoded.jti, expirydate: decoded.exp }
+        }
+        catch (error) {
+            console.log(error);
+            return new Error("Something went wrong", error);
+        }
+    }
